@@ -1,0 +1,40 @@
+<Window x:Class="YTubeFetch.Views.BatchSizeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Download Limit"
+        Width="420" Height="220"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Icon="/Resources/YTubeFetch.ico">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="MessageText" Grid.Row="0" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13"/>
+
+        <ComboBox x:Name="LimitCombo" Grid.Row="1" Margin="0,12,0,0"
+                  SelectedIndex="1" SelectionChanged="LimitCombo_SelectionChanged">
+            <ComboBoxItem Content="10"/>
+            <ComboBoxItem Content="50"/>
+            <ComboBoxItem Content="100"/>
+            <ComboBoxItem Content="All"/>
+        </ComboBox>
+
+        <TextBlock x:Name="AllWarning" Grid.Row="2" Visibility="Collapsed"
+                   Foreground="#E8A820" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="12"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="OK" Width="80" Margin="0,0,8,0"
+                    IsDefault="True" Click="OkButton_Click"/>
+            <Button Content="Cancel" Width="80" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

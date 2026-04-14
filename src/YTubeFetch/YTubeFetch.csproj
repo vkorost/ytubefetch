@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Resources\YTubeFetch.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <AssemblyTitle>YTubeFetch</AssemblyTitle>
+    <Description>Windows GUI YouTube Downloader</Description>
+  </PropertyGroup>
+
+  <!-- MCP debug server: only active in Debug builds -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>ENABLE_MCP</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\YTubeFetch.ico" />
+    <Resource Include="Resources\Icons\video.png" />
+    <Resource Include="Resources\Icons\audio.png" />
+    <Resource Include="Resources\Icons\subs.png" />
+  </ItemGroup>
+
+  <!-- Remove WinForms implicit usings that conflict with WPF types -->
+  <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>
