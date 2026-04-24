@@ -209,9 +209,22 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            // Capture valid URL before restore (clipboard monitor may have set it while hidden)
+            string? preservedUrl = null;
+            if (DownloadService.IsValidYouTubeUrl(UrlBar.Text.Trim()))
+                preservedUrl = UrlBar.Text;
+
             Show();
             WindowState = WindowState.Normal;
             Activate();
+
+            // After activation, WPF may deliver stale paste/input to the focused TextBox.
+            // Restore only the valid URL (or clear if there wasn't one).
+            if (preservedUrl != null)
+                UrlBar.Text = preservedUrl;
+            else if (!DownloadService.IsValidYouTubeUrl(UrlBar.Text.Trim()))
+                UrlBar.Clear();
+
             LogService.Log("Window restored from tray");
         });
     }
@@ -567,7 +580,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var (title, thumbUrl, uploadDate) = await _downloadService.FetchPreviewAsync(url);
+            var (title, thumbUrl, uploadDate, description) = await _downloadService.FetchPreviewAsync(url);
 
             // Update all jobs with this URL that still show "Loading..."
             foreach (var vm in _jobs.Where(j => j.Job.Url == url).ToList())
@@ -581,6 +594,8 @@ public partial class MainWindow : Window
                     vm.Job.ThumbnailUrl = thumbUrl;
                 if (vm.Job.UploadDate == null)
                     vm.Job.UploadDate = uploadDate;
+                if (vm.Job.Description == null)
+                    vm.Job.Description = description;
                 if (vm.Thumbnail == null && !string.IsNullOrEmpty(thumbUrl))
                     await LoadThumbnailAsync(vm, thumbUrl);
             }
@@ -851,6 +866,7 @@ public partial class MainWindow : Window
             _config.AudioQuality = r.AudioQuality;
             _config.PreferOriginalAudioAudio = r.PreferOriginalAudioAudio;
             _config.SubtitleLanguages = r.SubtitleLanguages;
+            _config.SubtitleObsidianFormat = r.SubtitleObsidianFormat;
             _config.SubtitleFallbackOriginal = r.SubtitleFallbackOriginal;
             _config.SubtitlePreferManual = r.SubtitlePreferManual;
 

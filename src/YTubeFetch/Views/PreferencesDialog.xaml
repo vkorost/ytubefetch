@@ -124,6 +124,7 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Text="Preferred languages (in order):"
@@ -155,10 +156,13 @@
                         </StackPanel>
                     </Grid>
 
-                    <CheckBox x:Name="SubFallbackCheck" Grid.Row="2"
+                    <CheckBox x:Name="SubObsidianCheck" Grid.Row="2"
+                              Content="Save subtitles in Obsidian format"
+                              Margin="0,0,0,8"/>
+                    <CheckBox x:Name="SubFallbackCheck" Grid.Row="3"
                               Content="Fallback to video's original language"
                               Margin="0,0,0,8"/>
-                    <CheckBox x:Name="SubPreferManualCheck" Grid.Row="3"
+                    <CheckBox x:Name="SubPreferManualCheck" Grid.Row="4"
                               Content="Prefer manual over auto-generated"/>
                 </Grid>
             </TabItem>

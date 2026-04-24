@@ -25,6 +25,7 @@ public class DownloadJob
     public string? OutputPath { get; set; }
     public string? ThumbnailUrl { get; set; }
     public string? UploadDate { get; set; }
+    public string? Description { get; set; }
     public bool IsBatch { get; set; }
     public List<string> BatchUrls { get; set; } = new();
     public int CurrentIndex { get; set; }

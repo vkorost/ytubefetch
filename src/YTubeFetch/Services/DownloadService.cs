@@ -45,14 +45,14 @@ public partial class DownloadService
             _ = ProcessQueueAsync();
     }
 
-    public async Task<(string title, string thumbnailUrl, string uploadDate)> FetchPreviewAsync(string url, CancellationToken ct = default)
+    public async Task<(string title, string thumbnailUrl, string uploadDate, string description)> FetchPreviewAsync(string url, CancellationToken ct = default)
     {
         // Strip playlist params for single videos
         if (IsSingleVideo(url))
             url = StripPlaylistParams(url);
 
-        var (uploadDate, title, thumbnailUrl) = await GetMetadataAsync(url, ct);
-        return (string.IsNullOrWhiteSpace(title) ? "Unknown" : title, thumbnailUrl, uploadDate);
+        var (uploadDate, title, thumbnailUrl, description) = await GetMetadataAsync(url, ct);
+        return (string.IsNullOrWhiteSpace(title) ? "Unknown" : title, thumbnailUrl, uploadDate, description);
     }
 
     public void StopAll()
@@ -216,17 +216,19 @@ public partial class DownloadService
         // Step 1: Get metadata (skip if preview already fetched it for this exact URL)
         string uploadDate;
         string title;
+        string description;
         if (!job.IsBatch && !string.IsNullOrWhiteSpace(job.Title) && job.Title != "Loading..." && job.UploadDate != null)
         {
             uploadDate = job.UploadDate;
             title = job.Title;
+            description = job.Description ?? "";
             LogService.Log($"Metadata (cached from preview): date={uploadDate}, title={title}");
         }
         else
         {
             LogService.Log($"Getting metadata for: {url}");
             string thumbnailUrl;
-            (uploadDate, title, thumbnailUrl) = await GetMetadataAsync(url, ct);
+            (uploadDate, title, thumbnailUrl, description) = await GetMetadataAsync(url, ct);
             if (string.IsNullOrWhiteSpace(title))
                 title = "Unknown";
 
@@ -239,6 +241,8 @@ public partial class DownloadService
                 JobUpdated?.Invoke(job);
             }
 
+            job.Description = description;
+
             LogService.Log($"Metadata: date={uploadDate}, title={title}");
         }
         StatusChanged?.Invoke($"Downloading {type}{(job.IsBatch ? $" [{job.CurrentIndex}/{job.TotalCount}]" : "")}: {title}");
@@ -247,7 +251,7 @@ public partial class DownloadService
         var datePrefix = Config.PrependUploadDate ? FormatDatePrefix(uploadDate) : "";
 
         if (type == DownloadType.Subtitles)
-            return await DownloadSubtitlesAsync(url, datePrefix, safeTitle, job, ct);
+            return await DownloadSubtitlesAsync(url, datePrefix, safeTitle, title, uploadDate, description, job, ct);
 
         // Build filename
         string ext = type == DownloadType.Video ? ".mp4" : GetAudioExtension();
@@ -336,7 +340,7 @@ public partial class DownloadService
     private static bool HasCyrillic(string text) =>
         text.Any(c => c is >= '\u0400' and <= '\u04FF');
 
-    private async Task<bool> DownloadSubtitlesAsync(string url, string datePrefix, string safeTitle, DownloadJob job, CancellationToken ct)
+    private async Task<bool> DownloadSubtitlesAsync(string url, string datePrefix, string safeTitle, string originalTitle, string uploadDate, string description, DownloadJob job, CancellationToken ct)
     {
         // Smart language reordering: if the title has no Cyrillic, try English first;
         // if it has Cyrillic, try Russian first. This overrides the config order.
@@ -393,9 +397,10 @@ public partial class DownloadService
             string subArgs = string.Join(" ", attempt[1..]);
             LogService.Log($"Trying subtitles: lang={lang}, args={subArgs}");
 
+            string ext = Config.SubtitleObsidianFormat ? ".md" : ".txt";
             string filename = string.IsNullOrEmpty(datePrefix)
-                ? $"{safeTitle} [{lang}].txt"
-                : $"{datePrefix}-{safeTitle} [{lang}].txt";
+                ? $"{safeTitle} [{lang}]{ext}"
+                : $"{datePrefix}-{safeTitle} [{lang}]{ext}";
 
             string folder = Config.GetDownloadFolder(DownloadType.Subtitles);
             string outputPath = Path.Combine(folder, filename);
@@ -437,7 +442,14 @@ public partial class DownloadService
                 if (string.IsNullOrWhiteSpace(cleanText))
                     continue;
 
-                await File.WriteAllTextAsync(outputPath, cleanText, ct);
+                // Build output with metadata header
+                string output;
+                if (Config.SubtitleObsidianFormat)
+                    output = FormatObsidianSubtitles(originalTitle, url, uploadDate, description, cleanText);
+                else
+                    output = FormatPlainTextSubtitles(originalTitle, url, uploadDate, description, cleanText);
+
+                await File.WriteAllTextAsync(outputPath, output, ct);
                 LogService.Log($"Subtitles saved: {outputPath}");
                 job.OutputPath = outputPath;
                 return true;
@@ -451,11 +463,26 @@ public partial class DownloadService
         throw new Exception("No subtitles found in any language");
     }
 
-    private async Task<(string uploadDate, string title, string thumbnailUrl)> GetMetadataAsync(string url, CancellationToken ct)
+    private async Task<(string uploadDate, string title, string thumbnailUrl, string description)> GetMetadataAsync(string url, CancellationToken ct)
     {
-        string args = $"--print \"%(upload_date)s\" --print \"%(title)s\" --print \"%(thumbnail)s\" --no-download \"{url}\"";
+        string args = $"--print \"%(upload_date)s\" --print \"%(title)s\" --print \"%(thumbnail)s\" --print \"---YTF_DESC---\" --print \"%(description)s\" --no-download \"{url}\"";
         var output = await RunYtDlpCaptureAsync(args, ct);
-        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        // Description can be multiline, so split on delimiter
+        string headerPart, description;
+        var delimIndex = output.IndexOf("---YTF_DESC---");
+        if (delimIndex >= 0)
+        {
+            headerPart = output[..delimIndex];
+            description = output[(delimIndex + "---YTF_DESC---".Length)..].Trim();
+        }
+        else
+        {
+            headerPart = output;
+            description = "";
+        }
+
+        var lines = headerPart.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
         string uploadDate = lines.Length > 0 ? lines[0].Trim() : "";
         string title = lines.Length > 1 ? lines[1].Trim() : "";
@@ -465,8 +492,10 @@ public partial class DownloadService
             uploadDate = "";
         if (thumbnailUrl == "NA" || thumbnailUrl == "null")
             thumbnailUrl = "";
+        if (description == "NA" || description == "null")
+            description = "";
 
-        return (uploadDate, title, thumbnailUrl);
+        return (uploadDate, title, thumbnailUrl, description);
     }
 
     private async Task<int> GetPlaylistCountAsync(string url, CancellationToken ct)
@@ -682,6 +711,73 @@ public partial class DownloadService
             return "";
 
         return $"{uploadDate[..4]}-{uploadDate[4..6]}-{uploadDate[6..8]}";
+    }
+
+    private static string FormatObsidianSubtitles(string title, string url, string uploadDate, string description, string transcript)
+    {
+        var sb = new StringBuilder();
+        var formattedDate = FormatDatePrefix(uploadDate);
+
+        // YAML frontmatter
+        sb.AppendLine("---");
+        sb.AppendLine($"title: \"{title.Replace("\"", "\\\"")}\"");
+        sb.AppendLine($"url: {url}");
+        if (!string.IsNullOrWhiteSpace(formattedDate))
+            sb.AppendLine($"date: {formattedDate}");
+        sb.AppendLine("---");
+        sb.AppendLine();
+
+        // Title heading
+        sb.AppendLine($"# {title}");
+        sb.AppendLine();
+
+        // Info callout
+        sb.AppendLine("> [!info] Video Details");
+        sb.AppendLine($"> **URL:** {url}");
+        if (!string.IsNullOrWhiteSpace(formattedDate))
+            sb.AppendLine($"> **Date:** {formattedDate}");
+        sb.AppendLine();
+
+        // Description
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            sb.AppendLine("## Description");
+            sb.AppendLine();
+            sb.AppendLine(description);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("---");
+        sb.AppendLine();
+
+        // Transcript
+        sb.AppendLine("## Transcript");
+        sb.AppendLine();
+        sb.Append(transcript);
+
+        return sb.ToString();
+    }
+
+    private static string FormatPlainTextSubtitles(string title, string url, string uploadDate, string description, string transcript)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Title: {title}");
+        sb.AppendLine($"URL: {url}");
+        var formattedDate = FormatDatePrefix(uploadDate);
+        if (!string.IsNullOrWhiteSpace(formattedDate))
+            sb.AppendLine($"Date: {formattedDate}");
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Description:");
+            sb.AppendLine(description);
+        }
+        sb.AppendLine();
+        sb.AppendLine("---");
+        sb.AppendLine();
+        sb.Append(transcript);
+
+        return sb.ToString();
     }
 
     [GeneratedRegex(@"([\d.]+)%")]

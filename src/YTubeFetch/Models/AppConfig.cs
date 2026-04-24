@@ -30,6 +30,7 @@ public class AppConfig
     public List<string> SubtitleLanguages { get; set; } = new() { "ru", "en" };
     public bool SubtitleFallbackOriginal { get; set; } = true;
     public bool SubtitlePreferManual { get; set; } = true;
+    public bool SubtitleObsidianFormat { get; set; } = true;
 
     // Toggle states
     public bool VideoEnabled { get; set; } = true;

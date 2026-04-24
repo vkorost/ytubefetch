@@ -50,6 +50,7 @@ public partial class PreferencesDialog : Window
         foreach (var lang in config.SubtitleLanguages)
             _languages.Add(lang);
         LangList.ItemsSource = _languages;
+        SubObsidianCheck.IsChecked = config.SubtitleObsidianFormat;
         SubFallbackCheck.IsChecked = config.SubtitleFallbackOriginal;
         SubPreferManualCheck.IsChecked = config.SubtitlePreferManual;
 
@@ -157,6 +158,7 @@ public partial class PreferencesDialog : Window
         ResultConfig.PreferOriginalAudioAudio = AudioOriginalAudioCheck.IsChecked == true;
 
         ResultConfig.SubtitleLanguages = new List<string>(_languages);
+        ResultConfig.SubtitleObsidianFormat = SubObsidianCheck.IsChecked == true;
         ResultConfig.SubtitleFallbackOriginal = SubFallbackCheck.IsChecked == true;
         ResultConfig.SubtitlePreferManual = SubPreferManualCheck.IsChecked == true;
 
