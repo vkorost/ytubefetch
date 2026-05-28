@@ -47,7 +47,7 @@ public partial class UserGuideDialog : Window
         // URL Bar
         AddHeading(doc, "URL Bar", 18, accent);
         AddParagraph(doc, "The URL bar at the top of the middle panel accepts YouTube URLs. The Fetch button is disabled until a valid YouTube URL is entered. Only YouTube URLs are accepted \u2014 pasting other content is silently ignored to protect your privacy.");
-        AddParagraph(doc, "Supported URL formats include regular video links (youtube.com/watch?v=...), short links (youtu.be/...), playlist links, and channel URLs.");
+        AddParagraph(doc, "Supported URL formats include regular videos (youtube.com/watch?v=...), short links (youtu.be/...), Shorts (/shorts/...), live streams (/live/...), embeds (/embed/...), clips (/clip/...), playlists, and channel URLs.");
 
         // Job List
         AddHeading(doc, "Job List", 18, accent);

@@ -665,22 +665,44 @@ public partial class DownloadService
 
     public static bool IsPlaylistOrChannel(string url)
     {
-        // watch?v= and youtu.be/ are always single videos even when list= is present
-        if (url.Contains("watch?v=") || url.Contains("youtu.be/"))
+        // Single video URLs take priority even when list= is present
+        if (IsSingleVideo(url))
             return false;
 
-        return url.Contains("list=") || url.Contains("/@") || url.Contains("/channel/") || url.Contains("/c/");
+        return url.Contains("list=") || url.Contains("/@") || url.Contains("/channel/")
+            || url.Contains("/c/") || url.Contains("/user/");
     }
 
     public static bool IsSingleVideo(string url)
     {
-        // watch?v= or youtu.be/ are single videos regardless of list= parameter
-        return url.Contains("watch?v=") || url.Contains("youtu.be/");
+        // All single-video URL patterns:
+        // youtube.com/watch?v=ID, youtu.be/ID, /shorts/ID, /live/ID, /embed/ID, /v/ID, /clip/ID
+        return url.Contains("watch?v=") || url.Contains("youtu.be/")
+            || url.Contains("/shorts/") || url.Contains("/live/")
+            || url.Contains("/embed/") || url.Contains("/v/")
+            || url.Contains("/clip/");
     }
 
     public static bool IsValidYouTubeUrl(string url)
     {
+        if (!IsYouTubeDomain(url))
+            return false;
         return IsSingleVideo(url) || IsPlaylistOrChannel(url);
+    }
+
+    private static bool IsYouTubeDomain(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            var host = uri.Host.ToLowerInvariant();
+            return host is "youtube.com" or "www.youtube.com" or "m.youtube.com"
+                or "music.youtube.com" or "youtu.be" or "www.youtu.be";
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
