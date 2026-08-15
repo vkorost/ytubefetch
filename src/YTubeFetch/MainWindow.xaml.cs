@@ -63,12 +63,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_Loaded(object sender, RoutedEventArgs e)
+    private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         LogService.Log("Window_Loaded start");
         try
         {
-            var (ytdlpPath, ffmpegPath) = DependencyManager.Initialize();
+            DependencyManager.ConfirmDownload = message => Dispatcher.Invoke(() =>
+                MessageBox.Show(this, message, "Download yt-dlp",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes);
+            DependencyManager.StatusChanged = message => Dispatcher.Invoke(() => SetStatus(message));
+
+            var (ytdlpPath, ffmpegPath) = await DependencyManager.InitializeAsync();
 
             if (ytdlpPath == null || ffmpegPath == null)
             {
@@ -80,8 +85,10 @@ public partial class MainWindow : Window
                 MessageBox.Show(this,
                     $"The following required tools could not be found:\n\n" +
                     $"  {string.Join(", ", missing)}\n\n" +
-                    $"Install yt-dlp: pip install yt-dlp\n" +
-                    $"  or download from https://github.com/yt-dlp/yt-dlp/releases\n\n" +
+                    $"Install yt-dlp: download the standalone yt-dlp.exe from\n" +
+                    $"  https://github.com/yt-dlp/yt-dlp/releases\n" +
+                    $"  (avoid 'pip install yt-dlp' — that installs a launcher script\n" +
+                    $"   which cannot update itself)\n\n" +
                     $"Install ffmpeg: https://ffmpeg.org/download.html\n\n" +
                     $"Both must be installed on your system.",
                     "Missing Dependencies", MessageBoxButton.OK, MessageBoxImage.Error);

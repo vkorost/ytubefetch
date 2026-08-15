@@ -100,3 +100,8 @@ $RECYCLE.BIN/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+## Release artifacts
+# Built zips are attached to GitHub Releases, not committed. Keeping the ~62 MB
+# binary in the repo bloated .git and tripped GitHub's file-size warning.
+dist/

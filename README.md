@@ -14,16 +14,16 @@ The app was designed by the author and coded by Claude. It was tested with the l
 
 - Windows 10 or Windows 11
 - [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (auto-discovered from PATH or common install locations)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (downloaded automatically if not already installed)
 - [ffmpeg](https://ffmpeg.org/) (auto-discovered from PATH or common install locations)
 
-On first run, YTubeFetch will locate yt-dlp and ffmpeg from your system and copy them to `%LOCALAPPDATA%\YTubeFetch\bin\` for future use. You can update yt-dlp later from the Actions menu.
+On first run, YTubeFetch locates yt-dlp and ffmpeg on your system and copies them to `%LOCALAPPDATA%\YTubeFetch\bin\` for future use. If no usable yt-dlp is found, it offers to download the official standalone build for you. You can update yt-dlp later from the Actions menu.
 
-> **Note:** Prefer the standalone `yt-dlp.exe` from the [yt-dlp releases page](https://github.com/yt-dlp/yt-dlp/releases) over a `pip install`. The pip package provides a small launcher script rather than the real binary, and it cannot update itself — **Actions > Update yt-dlp** will fail against it with "You installed yt-dlp with pip or using the wheel from PyPi; Use that to update". If yt-dlp is already in `%LOCALAPPDATA%\YTubeFetch\bin\` and is only ~100 KB rather than ~18 MB, replace it with the standalone binary.
+> **Note on `pip install yt-dlp`:** the pip package installs a ~100 KB launcher script rather than the real ~18 MB binary. That launcher cannot update itself, so **Actions > Update yt-dlp** fails against it and the copy silently goes stale until YouTube starts rejecting downloads with HTTP 403. YTubeFetch therefore ignores undersized copies and downloads the standalone build instead. If you prefer to install it yourself, get `yt-dlp.exe` from the [yt-dlp releases page](https://github.com/yt-dlp/yt-dlp/releases).
 
 ## Download
 
-Download [`YTubeFetch-v1.0.0-win-x64.zip`](dist/YTubeFetch-v1.0.0-win-x64.zip) from the `dist/` folder, extract it, and run `YTubeFetch.exe` from the extracted `YTubeFetch/` folder.
+Download the latest `YTubeFetch-vX.Y.Z-win-x64.zip` from the [**Releases page**](https://github.com/vkorost/ytubefetch/releases/latest), extract it, and run `YTubeFetch.exe`. The zip contains the executable and its native WPF DLLs — keep them together in the same folder.
 
 ## How It Works
 
