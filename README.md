@@ -19,6 +19,8 @@ The app was designed by the author and coded by Claude. It was tested with the l
 
 On first run, YTubeFetch will locate yt-dlp and ffmpeg from your system and copy them to `%LOCALAPPDATA%\YTubeFetch\bin\` for future use. You can update yt-dlp later from the Actions menu.
 
+> **Note:** Prefer the standalone `yt-dlp.exe` from the [yt-dlp releases page](https://github.com/yt-dlp/yt-dlp/releases) over a `pip install`. The pip package provides a small launcher script rather than the real binary, and it cannot update itself — **Actions > Update yt-dlp** will fail against it with "You installed yt-dlp with pip or using the wheel from PyPi; Use that to update". If yt-dlp is already in `%LOCALAPPDATA%\YTubeFetch\bin\` and is only ~100 KB rather than ~18 MB, replace it with the standalone binary.
+
 ## Download
 
 Download [`YTubeFetch-v1.0.0-win-x64.zip`](dist/YTubeFetch-v1.0.0-win-x64.zip) from the `dist/` folder, extract it, and run `YTubeFetch.exe` from the extracted `YTubeFetch/` folder.

@@ -548,7 +548,9 @@ public partial class DownloadService
 
     private async Task RunYtDlpAsync(string args, CancellationToken ct)
     {
-        args = "--js-runtimes node --remote-components ejs:github " + args;
+        // --encoding utf-8 is required: the standalone yt-dlp build ignores PYTHONIOENCODING
+        // and falls back to the console codepage, mangling Cyrillic titles to '?'.
+        args = "--encoding utf-8 --js-runtimes node --remote-components ejs:github " + args;
         LogService.Log($"yt-dlp: {args}");
 
         var psi = new ProcessStartInfo
@@ -616,7 +618,9 @@ public partial class DownloadService
 
     private async Task<string> RunYtDlpCaptureAsync(string args, CancellationToken ct)
     {
-        args = "--js-runtimes node --remote-components ejs:github " + args;
+        // --encoding utf-8 is required: the standalone yt-dlp build ignores PYTHONIOENCODING
+        // and falls back to the console codepage, mangling Cyrillic titles to '?'.
+        args = "--encoding utf-8 --js-runtimes node --remote-components ejs:github " + args;
         LogService.Log($"yt-dlp capture: {args}");
 
         var psi = new ProcessStartInfo
