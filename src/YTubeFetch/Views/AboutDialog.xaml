@@ -19,7 +19,7 @@
 
         <TextBlock Grid.Row="0" Text="YTubeFetch" FontSize="20" FontWeight="Bold" Margin="0,0,0,8"
                    Foreground="{DynamicResource TextPrimaryBrush}"/>
-        <TextBlock Grid.Row="1" Text="Version 1.0.1" Margin="0,0,0,8"
+        <TextBlock Grid.Row="1" Text="Version 1.0.2" Margin="0,0,0,8"
                    Foreground="{DynamicResource TextPrimaryBrush}"/>
         <TextBlock Grid.Row="2" Text="Windows GUI YouTube Downloader" TextWrapping="Wrap"
                    Margin="0,0,0,8" Foreground="{DynamicResource TextSecondaryBrush}"/>

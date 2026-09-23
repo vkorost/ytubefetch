@@ -364,7 +364,15 @@ public partial class DownloadService
             }
         }
 
-        // Build subtitle attempt list
+        // Build subtitle attempt list.
+        //
+        // YouTube serves auto-captions as two distinct track types: the raw ASR
+        // track ("en-orig") and machine-translated tracks ("en"). The translation
+        // endpoint is aggressively rate limited and returns HTTP 429 for most
+        // videos, while the ASR track downloads fine. So always try "<lang>-orig"
+        // before plain "<lang>". Videos with a single audio track and no
+        // translated captions have no "-orig" variant; that attempt then exits 0
+        // with no files and falls through to plain "<lang>".
         var attempts = new List<string[]>();
 
         foreach (var lang in languages)
@@ -372,10 +380,12 @@ public partial class DownloadService
             if (Config.SubtitlePreferManual)
             {
                 attempts.Add([lang, "--write-subs", "--sub-lang", lang]);
+                attempts.Add([lang, "--write-auto-subs", "--sub-lang", lang + "-orig"]);
                 attempts.Add([lang, "--write-auto-subs", "--sub-lang", lang]);
             }
             else
             {
+                attempts.Add([lang, "--write-auto-subs", "--sub-lang", lang + "-orig"]);
                 attempts.Add([lang, "--write-auto-subs", "--sub-lang", lang]);
                 attempts.Add([lang, "--write-subs", "--sub-lang", lang]);
             }
@@ -383,11 +393,17 @@ public partial class DownloadService
 
         if (Config.SubtitleFallbackOriginal)
         {
+            // Manual subtitles are a handful of real tracks, so "all" is cheap here.
             attempts.Add(["orig", "--write-subs", "--sub-lang", "all"]);
-            attempts.Add(["orig", "--write-auto-subs", "--sub-lang", "all"]);
+            // For auto-captions "all" means 200+ translated tracks, which 429s on
+            // the first one. Match only the ASR tracks instead (--sub-lang is a regex).
+            attempts.Add(["orig", "--write-auto-subs", "--sub-lang", "\".*-orig\""]);
         }
 
         LogService.Log($"Subtitle attempts: {attempts.Count} (languages: {string.Join(",", languages)})");
+
+        // Tracked so a rate-limited run is not reported as "this video has no subtitles".
+        bool rateLimited = false;
 
         foreach (var attempt in attempts)
         {
@@ -427,6 +443,7 @@ public partial class DownloadService
                 }
                 catch (Exception ex)
                 {
+                    if (ex is YtDlpException { Is429: true }) rateLimited = true;
                     LogService.Log($"Subtitle attempt failed ({lang}): {ex.Message}");
                     continue;
                 }
@@ -436,7 +453,16 @@ public partial class DownloadService
                 if (subFiles.Length == 0)
                     continue;
 
-                var rawText = await File.ReadAllTextAsync(subFiles[0], ct);
+                // The ".*-orig" fallback can return one file per audio track. Take the
+                // largest, which is the fullest transcript rather than whichever track
+                // happens to sort first.
+                var subFile = subFiles
+                    .OrderByDescending(f => new FileInfo(f).Length)
+                    .First();
+                if (subFiles.Length > 1)
+                    LogService.Log($"Multiple subtitle tracks returned; using {Path.GetFileName(subFile)}");
+
+                var rawText = await File.ReadAllTextAsync(subFile, ct);
                 var cleanText = SubtitleProcessor.StripTimestamps(rawText);
 
                 if (string.IsNullOrWhiteSpace(cleanText))
@@ -459,6 +485,12 @@ public partial class DownloadService
                 try { Directory.Delete(tempDir, true); } catch { }
             }
         }
+
+        if (rateLimited)
+            throw new Exception(
+                "YouTube rate-limited the subtitle download (HTTP 429). This usually means " +
+                "only machine-translated captions are available for the requested languages. " +
+                "Try again later, or add the video's spoken language to the subtitle languages.");
 
         throw new Exception("No subtitles found in any language");
     }
