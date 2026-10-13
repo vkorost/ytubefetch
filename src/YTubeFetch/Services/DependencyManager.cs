@@ -28,12 +28,24 @@ public static class DependencyManager
 
     // yt-dlp goes stale fast — YouTube changes extraction constantly, and an old
     // build starts failing in ways that look like app bugs. Nothing here ever
-    // refreshed it after the first download, so re-fetch past this age. The check
-    // costs one "--version" call on launch.
-    private const int MaxYtDlpAgeDays = 14;
+    // refreshed it after the first download, so check for a newer one on launch.
+    //
+    // The test is "is a newer build published", not "is ours older than N days":
+    // yt-dlp's own stable release is routinely weeks old, so an absolute age
+    // threshold can never be satisfied and would re-download 18 MB every launch.
+    private const int VersionCheckIntervalHours = 24;
 
     private const string YtDlpDownloadUrl =
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
+
+    // Redirects to .../releases/tag/<version>, which names the latest build
+    // without downloading it and without the API's unauthenticated rate limit.
+    private const string YtDlpLatestUrl =
+        "https://github.com/yt-dlp/yt-dlp/releases/latest";
+
+    // Stamped after every check, successful or not, so a failing check backs off
+    // for the interval instead of retrying on every launch.
+    private static string VersionCheckMarker => Path.Combine(BinDir, "yt-dlp.lastcheck");
 
     public static string? YtDlpPath { get; private set; }
     public static string? FfmpegPath { get; private set; }
@@ -147,21 +159,42 @@ public static class DependencyManager
             return path;
         }
 
-        var buildDate = await GetYtDlpBuildDateAsync(path);
-        if (buildDate == null)
+        var sinceLastCheck = TimeSinceLastVersionCheck();
+        if (sinceLastCheck != null && sinceLastCheck.Value.TotalHours < VersionCheckIntervalHours)
         {
-            LogService.Log("yt-dlp build date unavailable; skipping staleness check");
+            LogService.Log($"yt-dlp version checked {sinceLastCheck.Value.TotalHours:F1}h ago " +
+                           $"(interval {VersionCheckIntervalHours}h); skipping");
             return path;
         }
 
-        int ageDays = (int)(DateTime.UtcNow.Date - buildDate.Value.Date).TotalDays;
-        LogService.Log($"yt-dlp build {buildDate:yyyy-MM-dd} is {ageDays} day(s) old " +
-                       $"(refresh threshold {MaxYtDlpAgeDays} days)");
-
-        if (ageDays < MaxYtDlpAgeDays)
+        var localBuild = await GetYtDlpBuildDateAsync(path);
+        if (localBuild == null)
+        {
+            LogService.Log("yt-dlp build date unavailable; skipping version check");
             return path;
+        }
 
-        StatusChanged?.Invoke($"yt-dlp is {ageDays} days old — updating...");
+        // Stamp before the network call so an outage backs off rather than
+        // retrying on every launch.
+        StampVersionCheck();
+
+        var latestBuild = await GetLatestYtDlpBuildDateAsync();
+        if (latestBuild == null)
+        {
+            LogService.Log("Latest yt-dlp version unavailable; keeping the current build");
+            return path;
+        }
+
+        if (latestBuild.Value.Date <= localBuild.Value.Date)
+        {
+            LogService.Log($"yt-dlp is current: local {localBuild:yyyy-MM-dd}, " +
+                           $"latest {latestBuild:yyyy-MM-dd}");
+            return path;
+        }
+
+        LogService.Log($"Newer yt-dlp available: local {localBuild:yyyy-MM-dd} -> " +
+                       $"latest {latestBuild:yyyy-MM-dd}");
+        StatusChanged?.Invoke($"Updating yt-dlp to {latestBuild:yyyy-MM-dd}...");
 
         var refreshed = await TryDownloadYtDlpAsync(prompt: false);
         if (refreshed == null)
@@ -171,11 +204,62 @@ public static class DependencyManager
             return path;
         }
 
-        var newDate = await GetYtDlpBuildDateAsync(refreshed);
-        LogService.Log($"yt-dlp refreshed: build {buildDate:yyyy-MM-dd} -> " +
-                       $"{(newDate == null ? "unknown" : newDate.Value.ToString("yyyy-MM-dd"))}");
+        var newBuild = await GetYtDlpBuildDateAsync(refreshed);
+        LogService.Log($"yt-dlp refreshed: build {localBuild:yyyy-MM-dd} -> " +
+                       $"{(newBuild == null ? "unknown" : newBuild.Value.ToString("yyyy-MM-dd"))}");
         StatusChanged?.Invoke("yt-dlp updated.");
         return refreshed;
+    }
+
+    private static TimeSpan? TimeSinceLastVersionCheck()
+    {
+        try
+        {
+            if (!File.Exists(VersionCheckMarker)) return null;
+            var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(VersionCheckMarker);
+            // A clock change can put the marker in the future; treat that as due.
+            return age < TimeSpan.Zero ? null : age;
+        }
+        catch { return null; }
+    }
+
+    private static void StampVersionCheck()
+    {
+        try { File.WriteAllText(VersionCheckMarker, DateTime.UtcNow.ToString("O")); }
+        catch (Exception ex) { LogService.Log($"Could not stamp version check: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// Reads the latest published yt-dlp version without downloading it: the
+    /// "releases/latest" URL redirects to "releases/tag/&lt;version&gt;".
+    /// </summary>
+    private static async Task<DateTime?> GetLatestYtDlpBuildDateAsync()
+    {
+        try
+        {
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+
+            using var response = await http.GetAsync(YtDlpLatestUrl, HttpCompletionOption.ResponseHeadersRead);
+            var location = response.Headers.Location?.ToString();
+            if (string.IsNullOrWhiteSpace(location))
+            {
+                LogService.Log($"No redirect from {YtDlpLatestUrl} (status {(int)response.StatusCode})");
+                return null;
+            }
+
+            var tag = location[(location.LastIndexOf('/') + 1)..];
+            var parsed = ParseYtDlpVersion(tag);
+            if (parsed == null)
+                LogService.Log($"Unrecognized latest yt-dlp tag: '{tag}'");
+
+            return parsed;
+        }
+        catch (Exception ex)
+        {
+            LogService.Log($"Latest yt-dlp version check failed: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -207,27 +291,40 @@ public static class DependencyManager
             await process.WaitForExitAsync(cts.Token);
 
             var version = stdout.Trim().Split('\n')[0].Trim();
-            var parts = version.Split('.');
-            if (parts.Length < 3) return null;
+            var parsed = ParseYtDlpVersion(version);
+            if (parsed == null)
+                LogService.Log($"Unrecognized yt-dlp version string: '{version}'");
 
-            if (int.TryParse(parts[0], out int year)
-                && int.TryParse(parts[1], out int month)
-                && int.TryParse(parts[2], out int day)
-                && year is >= 2000 and <= 2999
-                && month is >= 1 and <= 12
-                && day is >= 1 and <= 31)
-            {
-                return new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc);
-            }
-
-            LogService.Log($"Unrecognized yt-dlp version string: '{version}'");
-            return null;
+            return parsed;
         }
         catch (Exception ex)
         {
             LogService.Log($"yt-dlp --version failed: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Parses a yt-dlp version — "2026.08.19" or the nightly "2026.08.04.234419" —
+    /// into its build date. Returns null if the string is not that shape.
+    /// </summary>
+    private static DateTime? ParseYtDlpVersion(string version)
+    {
+        var parts = version.Trim().Split('.');
+        if (parts.Length < 3) return null;
+
+        if (int.TryParse(parts[0], out int year)
+            && int.TryParse(parts[1], out int month)
+            && int.TryParse(parts[2], out int day)
+            && year is >= 2000 and <= 2999
+            && month is >= 1 and <= 12
+            && day is >= 1 and <= 31)
+        {
+            try { return new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc); }
+            catch (ArgumentOutOfRangeException) { return null; }
+        }
+
+        return null;
     }
 
     private static async Task<string?> TryDownloadYtDlpAsync(bool prompt)
