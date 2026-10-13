@@ -26,6 +26,12 @@ public static class DependencyManager
     // Sanity floor for "is this a file at all", used only for the degraded fallback.
     private const long MinAnyBytes = 1024;
 
+    // yt-dlp goes stale fast — YouTube changes extraction constantly, and an old
+    // build starts failing in ways that look like app bugs. Nothing here ever
+    // refreshed it after the first download, so re-fetch past this age. The check
+    // costs one "--version" call on launch.
+    private const int MaxYtDlpAgeDays = 14;
+
     private const string YtDlpDownloadUrl =
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 
@@ -100,10 +106,10 @@ public static class DependencyManager
     {
         var resolved = ResolveTool("yt-dlp", MinYtDlpBytes);
         if (resolved != null)
-            return resolved;
+            return await RefreshIfStaleAsync(resolved);
 
         // Nothing usable on this machine — fetch the official standalone build.
-        var downloaded = await TryDownloadYtDlpAsync();
+        var downloaded = await TryDownloadYtDlpAsync(prompt: true);
         if (downloaded != null)
             return downloaded;
 
@@ -125,9 +131,108 @@ public static class DependencyManager
         return null;
     }
 
-    private static async Task<string?> TryDownloadYtDlpAsync()
+    /// <summary>
+    /// Re-downloads yt-dlp when the local build is older than
+    /// <see cref="MaxYtDlpAgeDays"/>. Best effort by design: any failure keeps the
+    /// build we already have, because a stale yt-dlp still beats no yt-dlp.
+    /// </summary>
+    private static async Task<string> RefreshIfStaleAsync(string path)
     {
-        if (ConfirmDownload != null &&
+        var binPath = Path.Combine(BinDir, "yt-dlp.exe");
+        if (!string.Equals(path, binPath, StringComparison.OrdinalIgnoreCase))
+        {
+            // Someone else owns this copy (a system install we could not copy, or
+            // the degraded pip fallback). Replacing it is not ours to do.
+            LogService.Log($"yt-dlp is not our bin copy ({path}); skipping staleness check");
+            return path;
+        }
+
+        var buildDate = await GetYtDlpBuildDateAsync(path);
+        if (buildDate == null)
+        {
+            LogService.Log("yt-dlp build date unavailable; skipping staleness check");
+            return path;
+        }
+
+        int ageDays = (int)(DateTime.UtcNow.Date - buildDate.Value.Date).TotalDays;
+        LogService.Log($"yt-dlp build {buildDate:yyyy-MM-dd} is {ageDays} day(s) old " +
+                       $"(refresh threshold {MaxYtDlpAgeDays} days)");
+
+        if (ageDays < MaxYtDlpAgeDays)
+            return path;
+
+        StatusChanged?.Invoke($"yt-dlp is {ageDays} days old — updating...");
+
+        var refreshed = await TryDownloadYtDlpAsync(prompt: false);
+        if (refreshed == null)
+        {
+            LogService.Log("yt-dlp refresh failed; continuing with the existing build");
+            StatusChanged?.Invoke("yt-dlp update failed — using the existing build.");
+            return path;
+        }
+
+        var newDate = await GetYtDlpBuildDateAsync(refreshed);
+        LogService.Log($"yt-dlp refreshed: build {buildDate:yyyy-MM-dd} -> " +
+                       $"{(newDate == null ? "unknown" : newDate.Value.ToString("yyyy-MM-dd"))}");
+        StatusChanged?.Invoke("yt-dlp updated.");
+        return refreshed;
+    }
+
+    /// <summary>
+    /// Reads yt-dlp's build date from "--version", which prints a date-stamped
+    /// version such as "2026.08.04" or "2026.08.04.234419". Returns null when it
+    /// cannot be determined, which callers treat as "do not touch it".
+    /// </summary>
+    private static async Task<DateTime?> GetYtDlpBuildDateAsync(string path)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8
+            };
+
+            using var process = Process.Start(psi);
+            if (process == null) return null;
+
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await process.WaitForExitAsync(cts.Token);
+
+            var version = stdout.Trim().Split('\n')[0].Trim();
+            var parts = version.Split('.');
+            if (parts.Length < 3) return null;
+
+            if (int.TryParse(parts[0], out int year)
+                && int.TryParse(parts[1], out int month)
+                && int.TryParse(parts[2], out int day)
+                && year is >= 2000 and <= 2999
+                && month is >= 1 and <= 12
+                && day is >= 1 and <= 31)
+            {
+                return new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc);
+            }
+
+            LogService.Log($"Unrecognized yt-dlp version string: '{version}'");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LogService.Log($"yt-dlp --version failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static async Task<string?> TryDownloadYtDlpAsync(bool prompt)
+    {
+        if (prompt && ConfirmDownload != null &&
             !ConfirmDownload("A usable yt-dlp was not found.\n\n" +
                              "Only a pip launcher may be installed, which cannot update itself " +
                              "and goes stale silently.\n\n" +

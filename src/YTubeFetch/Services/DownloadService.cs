@@ -558,7 +558,11 @@ public partial class DownloadService
 
     private async Task RunYtDlpWithRetryAsync(string args, CancellationToken ct)
     {
-        int[] delays = [10000, 30000, 60000];
+        // A 429 means YouTube wants us to slow down, so wait it out. A transient
+        // 403 or dropped connection clears on the next attempt, so retry promptly
+        // rather than stalling the queue for a minute and a half.
+        int[] rateLimitDelays = [10000, 30000, 60000];
+        int[] transientDelays = [3000, 8000, 15000];
 
         for (int attempt = 0; attempt <= 2; attempt++)
         {
@@ -569,11 +573,14 @@ public partial class DownloadService
                 await RunYtDlpAsync(args, ct);
                 return;
             }
-            catch (YtDlpException ex) when (ex.Is429 && attempt < 2)
+            catch (YtDlpException ex) when (ex.IsRetryable && attempt < 2)
             {
-                LogService.Log($"429 rate limited, retry {attempt + 1}/3 after {delays[attempt] / 1000}s");
-                StatusChanged?.Invoke($"Rate limited (429). Retrying in {delays[attempt] / 1000}s...");
-                await Task.Delay(delays[attempt], ct);
+                int delay = (ex.Is429 ? rateLimitDelays : transientDelays)[attempt];
+                string reason = ex.Is429 ? "Rate limited (429)" : "Transient yt-dlp error";
+
+                LogService.Log($"{reason} [{ex.Kind}], retry {attempt + 1}/3 after {delay / 1000}s");
+                StatusChanged?.Invoke($"{reason}. Retrying in {delay / 1000}s...");
+                await Task.Delay(delay, ct);
             }
         }
     }
@@ -641,10 +648,9 @@ public partial class DownloadService
         if (process.ExitCode != 0)
         {
             var errorText = string.Join("\n", stderr);
-            bool is429 = errorText.Contains("HTTP Error 429", StringComparison.OrdinalIgnoreCase)
-                       || errorText.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase);
-            LogService.Error($"yt-dlp failed (exit={process.ExitCode}, 429={is429}): {errorText}");
-            throw new YtDlpException(errorText, is429);
+            var kind = YtDlpException.Classify(errorText);
+            LogService.Error($"yt-dlp failed (exit={process.ExitCode}, kind={kind}): {errorText}");
+            throw new YtDlpException(errorText, kind);
         }
     }
 
@@ -845,12 +851,3 @@ public partial class DownloadService
     private static partial Regex InvalidCharsRegex();
 }
 
-public class YtDlpException : Exception
-{
-    public bool Is429 { get; }
-
-    public YtDlpException(string message, bool is429) : base(message)
-    {
-        Is429 = is429;
-    }
-}
