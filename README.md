@@ -1,3 +1,5 @@
+[![YTubeFetch — batch-download YouTube subtitles, audio and video](./screenshots/youtubefetch-social-800x400.jpg)](https://github.com/vkorost/ytubefetch/releases/latest)
+
 # YTubeFetch
 
 Windows desktop application for downloading YouTube videos, audio, and subtitles.
